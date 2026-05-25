@@ -1,0 +1,47 @@
+name: Backend Ventas CI/CD - Innovatech
+
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v3
+
+      - name: Iniciar sesión en Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Contexto apunta a la subcarpeta del microservicio donde está el pom.xml
+      - name: Construir y Subir Imagen Docker
+        uses: docker/build-push-action@v4
+        with:
+          context: ./BackendVentasInnovatech/Springboot-API-REST
+          file: ./BackendVentasInnovatech/Springboot-API-REST/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/backend-ventas:latest
+
+  deploy-to-ec2:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Desplegar en AWS Academy EC2 mediante Docker Compose
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.AWS_EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.AWS_SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/ec2-user/innovatech-stack || mkdir -p /home/ec2-user/innovatech-stack && cd /home/ec2-user/innovatech-stack
+            echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}" > .env
+            
+            docker compose -f docker-compose.backend.yml pull backend-ventas
+            docker compose -f docker-compose.backend.yml up -d backend-ventas
+            
+            docker image prune -f
